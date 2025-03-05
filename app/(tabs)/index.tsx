@@ -1,8 +1,8 @@
-import { View, StyleSheet,Platform } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import ImageViewer from '../components/ImageViewer';
 import Button from '../components/Button';
 import * as ImagePicker from 'expo-image-picker';
-import { useState, useEffect,useRef } from 'react';
+import { useState, useRef } from 'react';
 import { type ImageSource } from 'expo-image';
 const PlaceholderImage = require("@/assets/images/background-image.png");
 import IconButton from '../components/IconButton';
@@ -12,26 +12,27 @@ import EmojiList from '../components/EmojiList';
 import EmojiSticker from "../components/EmojiSticker"
 import * as MediaLibrary from 'expo-media-library';
 import { captureRef } from 'react-native-view-shot';
-
+import domtoimage from 'dom-to-image';
 export default function Index() {
-
   const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
   const [showAppOptions, setShowAppOptions] = useState<boolean>(false);
-  const [isModalVisable, setModalVisable] = useState<boolean>(false);
+  const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
   const [pickedEmoji, setPickedEmoji] = useState<ImageSource | undefined>(undefined);
-  const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
+  const [status, requestPermission] = MediaLibrary.usePermissions();
   const imageRef = useRef<View>(null);
 
-  useEffect(() => {
-    if (!permissionResponse?.granted) {
-      requestPermission();
-    }
-  }, []);
-  const PicImageAsync = async () => {
+  // Request permission immediately if null (initial state)
+  if (status === null) {
+    requestPermission();
+  }
+
+  const pickImageAsync = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, // Fix: Ensures only images are selected
       allowsEditing: true,
       quality: 1,
-    })
+    });
+
     if (!result.canceled) {
       setSelectedImage(result.assets[0].uri);
       setShowAppOptions(true);
@@ -41,42 +42,81 @@ export default function Index() {
   };
 
   const onReset = () => {
-    setShowAppOptions(false);
+    setSelectedImage(undefined); // Reset selected image
+    setPickedEmoji(undefined); // Reset selected emoji (if needed)
+    setShowAppOptions(false); // Hide app options
   };
+
   const onModalClose = () => {
-    setModalVisable(false);
+    setIsModalVisible(false);
   };
 
   const onAddSticker = () => {
-    setModalVisable(true);
+    setIsModalVisible(true);
   };
+
+  // const onSaveImageAsync = async () => {
+  //   try {
+  //     if (Platform.OS === 'web') {
+  //       alert('Saving to the gallery is not supported on the web.');
+  //       return;
+  //     }
+
+  //     const localUri = await captureRef(imageRef, {
+  //       height: 440,
+  //       quality: 1,
+  //     });
+
+  //     await MediaLibrary.saveToLibraryAsync(localUri);
+  //     if (localUri) {
+  //       alert('Saved!');
+  //     }
+  //   } catch (e) {
+  //     console.log(e);
+  //   }
+  // };
+
 
   const onSaveImageAsync = async () => {
-    try {
-      if (Platform.OS === 'web') {
-        alert('Saving to the gallery is not supported on the web.');
-        return;
+    if (Platform.OS !== 'web') {
+      try {
+        const localUri = await captureRef(imageRef, {
+          height: 440,
+          quality: 1,
+        });
+
+        await MediaLibrary.saveToLibraryAsync(localUri);
+        if (localUri) {
+          alert('Saved!');
+        }
+      } catch (e) {
+        console.log(e);
       }
-  
-      const localUri = await captureRef(imageRef, {
-        height: 440,
-        quality: 1,
-      });
-  
-      await MediaLibrary.saveToLibraryAsync(localUri);
-      if (localUri) {
-        alert('Saved!');
+    } else {
+      try {
+        // @ts-ignore
+        const dataUrl = await domtoimage.toJpeg(imageRef.current, {
+          quality: 0.95,
+          width: 320,
+          height: 440,
+        });
+
+        let link = document.createElement('a');
+        link.download = 'sticker-smash.jpeg';
+        link.href = dataUrl;
+        link.click();
+      } catch (e) {
+        console.log(e);
       }
-    } catch (e) {
-      console.log(e);
     }
   };
-
   return (
     <View style={styles.container}>
-      <View ref={imageRef} style={styles.imageContainer}>
+      <View style={styles.imageContainer}>
+        <View ref={imageRef} collapsable={false}>
         <ImageViewer imgSource={selectedImage || PlaceholderImage} />
-        {pickedEmoji && <EmojiSticker imageSize={40} stickerSource={pickedEmoji} />}
+          {pickedEmoji && <EmojiSticker imageSize={40} stickerSource={pickedEmoji} />}
+        </View>
       </View>
       {showAppOptions ? (
         <View style={styles.optionsContainer}>
@@ -88,13 +128,11 @@ export default function Index() {
         </View>
       ) : (
         <View style={styles.footerContainer}>
-          <Button theme='primary'
-            onPress={PicImageAsync}
-            label="Choose a photo" />
+          <Button theme='primary' onPress={pickImageAsync} label="Choose a photo" />
           <Button label="Use this photo" onPress={() => setShowAppOptions(true)} />
         </View>
       )}
-      <EmojiPicker isVisible={isModalVisable} onClose={onModalClose}>
+      <EmojiPicker isVisible={isModalVisible} onClose={onModalClose}>
         <EmojiList onSelect={setPickedEmoji} onCloseModal={onModalClose} />
       </EmojiPicker>
     </View>
@@ -109,13 +147,11 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     flex: 1,
-    paddingTop: 28,
   },
   footerContainer: {
     flex: 1 / 3,
     alignItems: 'center',
   },
-
   optionsContainer: {
     position: 'absolute',
     bottom: 80,
